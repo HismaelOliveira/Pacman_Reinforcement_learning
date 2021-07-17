@@ -2,6 +2,7 @@ from game import *
 
 import random,util,math,time
 import util
+import pandas as pd 
 
 def closestFood(pos, food, walls):
     matrix = [(pos[0], pos[1], 0)]
@@ -31,7 +32,12 @@ class RLAgent():
         self.alpha = float(alpha)
         self.discount = float(gamma)
         self.QValues = util.Counter()
-        self.weights = util.Counter()   
+        self.weights = util.Counter() 
+        self.scores = []
+        self.actions = []
+        self.importance = []
+        self.rewards = []
+        self.rewards_window = []
 
     def stopEpisode(self):
         if self.episodesSoFar < self.numTraining:
@@ -69,6 +75,7 @@ class RLAgent():
 
         self.lastState = state
         self.lastAction = action
+        self.numActions += 1
 
         return action
 
@@ -79,7 +86,6 @@ class RLAgent():
         capsule = state.getCapsules()
 
         features = util.Counter()
-        #features["bias"] = 1.0
 
         x, y = state.getPacmanPosition()
         dx, dy = Actions.directionToVector(action)
@@ -114,12 +120,13 @@ class RLAgent():
         features = self.getFeatures(state, action)
 
         for feature in features:
-          self.weights[feature] += self.alpha * features[feature] * difference
+            self.weights[feature] += self.alpha * features[feature] * difference
 
     def registerInitialState(self, state):
         self.lastState = None
         self.lastAction = None
         self.episodeRewards = 0.0
+        self.numActions = 0
 
         if self.episodesSoFar == 0:
             print('Beginning %d episodes of Training' % (self.numTraining))
@@ -130,29 +137,38 @@ class RLAgent():
         self.update(self.lastState, self.lastAction, state, deltaReward)
         self.stopEpisode()
 
-        # Make sure we have this var
-        if not 'episodeStartTime' in self.__dict__:
-            self.episodeStartTime = time.time()
         if not 'lastWindowAccumRewards' in self.__dict__:
             self.lastWindowAccumRewards = 0.0
         self.lastWindowAccumRewards += state.getScore()
 
-        NUM_EPS_UPDATE = 10
-        if self.episodesSoFar % NUM_EPS_UPDATE == 0:
-            print('Satatus:')
+        NUM_EPS_UPDATE = 5
+        if self.episodesSoFar % NUM_EPS_UPDATE == 0: 
             windowAvg = self.lastWindowAccumRewards / float(NUM_EPS_UPDATE)
             
             trainAvg = self.accumTrainRewards / float(self.episodesSoFar)
-            print ('\t%d of %d of training episodes' % (
-                    self.episodesSoFar,self.numTraining))
-            print ('\tAverage Rewards over all training: %.2f' % (
-                    trainAvg))
-            print ('\tAverage Rewards for last %d episodes: %.2f'  % (
-                    NUM_EPS_UPDATE,windowAvg))
             self.lastWindowAccumRewards = 0.0
+            self.rewards_window.append(trainAvg)
+            
+        self.scores.append(state.getScore())
+        self.actions.append(self.numActions)
+        self.importance.append(self.weights)
+        self.rewards.append(self.episodeRewards)
 
         if self.episodesSoFar == self.numTraining:
             msg = 'Training Process is Done'
             print ('%s\n%s' % (msg,'-' * len(msg)))
+            print ('\t%d training episodes ' % (self.numTraining))
             print ('\tAverage Rewards over all training: %.2f' % (
                     trainAvg))
+
+            data = pd.DataFrame()
+            data['Scores'] = self.scores 
+            data['Actions'] = self.actions
+            data['Weights'] = self.importance
+            data['Rewards'] = self.rewards
+
+            rewards = pd.DataFrame()
+            rewards['rewards'] = self.rewards_window
+            
+            data.to_excel('data_pacman.xlsx')
+            rewards.to_excel('rewards_pacman.xlsx')
